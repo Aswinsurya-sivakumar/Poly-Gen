@@ -1,43 +1,56 @@
+
+# ============================================================
+# POLYGEN - WEEK 1
+# TEXT TO 3D MODEL GENERATION
+# Using OpenAI Shap-E
+# ============================================================
+
 import os
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 import trimesh
-
-from IPython.display import display
+import plotly.graph_objects as go
 
 from shap_e.diffusion.sample import sample_latents
 from shap_e.diffusion.gaussian_diffusion import diffusion_from_config
 from shap_e.models.download import load_model, load_config
 from shap_e.util.notebooks import decode_latent_mesh
 
-# Set device
+from google.colab import files
+
+# ------------------------------------------------------------
+# 1. DEVICE CONFIGURATION
+# ------------------------------------------------------------
+
 device = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-print("PolyGen - Text to 3D Generation")
-print("--------------------------------")
-
-print("PyTorch Version:", torch.__version__)
+print("POLYGEN TEXT-TO-3D PIPELINE")
+print("---------------------------")
+print("PyTorch:", torch.__version__)
 print("Device:", device)
 
 if torch.cuda.is_available():
     print("GPU:", torch.cuda.get_device_name(0))
 else:
-    print("Warning: GPU not available. Enable T4 GPU in Colab.")
+    print("GPU not available. CPU generation may be slow.")
 
-PROJECT_DIR = "/content/PolyGen"
+# ------------------------------------------------------------
+# 2. CREATE OUTPUT DIRECTORY
+# ------------------------------------------------------------
 
-OUTPUT_DIR = os.path.join(PROJECT_DIR, "output")
-MODEL_DIR = os.path.join(PROJECT_DIR, "models")
+OUTPUT_DIR = "/content/polygen_output"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(MODEL_DIR, exist_ok=True)
 
-print("Project folders created successfully!")
+print("\nOutput directory created.")
 
-print("Loading Shap-E models...")
+# ------------------------------------------------------------
+# 3. LOAD SHAP-E MODELS
+# ------------------------------------------------------------
+
+print("\nLoading Shap-E models...")
 
 xm = load_model(
     "transmitter",
@@ -55,52 +68,143 @@ diffusion = diffusion_from_config(
 
 print("Models loaded successfully!")
 
-def generate_3d_model(prompt, filename):
+# ------------------------------------------------------------
+# 4. GET TEXT PROMPT
+# ------------------------------------------------------------
 
-    print("\nGenerating 3D model...")
-    print("Prompt:", prompt)
+prompt = input(
+    "\nEnter your 3D object description: "
+).strip()
 
-    latents = sample_latents(
-        batch_size=1,
-        model=model,
-        diffusion=diffusion,
-        guidance_scale=15.0,
-        model_kwargs={
-            "texts": [prompt]
-        },
-        progress=True,
-        clip_denoised=True,
-        use_fp16=torch.cuda.is_available(),
-        use_karras=True,
-        karras_steps=64,
-        sigma_min=1e-3,
-        sigma_max=160,
-        s_churn=0
-    )
+if not prompt:
+    raise ValueError("Please enter a valid text prompt.")
 
-    # Convert latent representation into 3D mesh
-    mesh = decode_latent_mesh(
-        xm,
-        latents[0]
-    ).tri_mesh()
+print("\nYour Prompt:", prompt)
 
-    # Save OBJ file
-    output_path = os.path.join(
-        OUTPUT_DIR,
-        filename + ".obj"
-    )
+# ------------------------------------------------------------
+# 5. GENERATE 3D LATENTS
+# ------------------------------------------------------------
 
-    with open(output_path, "w") as file:
-        mesh.write_obj(file)
+print("\nGenerating 3D model...")
+print("Please wait...")
 
-    print("3D model generated successfully!")
-    print("Saved at:", output_path)
-
-    return output_path
-
-    prompt = "A futuristic sports car"
-
-model_path = generate_3d_model(
-    prompt,
-    "sports_car"
+latents = sample_latents(
+    batch_size=1,
+    model=model,
+    diffusion=diffusion,
+    guidance_scale=15.0,
+    model_kwargs={
+        "texts": [prompt]
+    },
+    progress=True,
+    clip_denoised=True,
+    use_fp16=(device.type == "cuda"),
+    use_karras=True,
+    karras_steps=64,
+    sigma_min=1e-3,
+    sigma_max=160,
+    s_churn=0
 )
+
+print("\n3D generation completed!")
+
+# ------------------------------------------------------------
+# 6. DECODE LATENT INTO 3D MESH
+# ------------------------------------------------------------
+
+print("\nDecoding 3D mesh...")
+
+mesh = decode_latent_mesh(
+    xm,
+    latents[0]
+).tri_mesh()
+
+vertices = np.asarray(
+    mesh.verts,
+    dtype=np.float32
+)
+
+faces = np.asarray(
+    mesh.faces,
+    dtype=np.int64
+)
+
+print("Vertices:", len(vertices))
+print("Faces:", len(faces))
+
+# ------------------------------------------------------------
+# 7. SAVE MODEL AS OBJ
+# ------------------------------------------------------------
+
+obj_path = os.path.join(
+    OUTPUT_DIR,
+    "generated_model.obj"
+)
+
+with open(obj_path, "w") as file:
+    mesh.write_obj(file)
+
+print("\nOBJ model saved:", obj_path)
+
+# ------------------------------------------------------------
+# 8. LOAD AND INSPECT MODEL
+# ------------------------------------------------------------
+
+loaded_mesh = trimesh.load(
+    obj_path,
+    force="mesh",
+    process=False
+)
+
+print("\nMODEL INFORMATION")
+print("-----------------")
+print("Vertices:", len(loaded_mesh.vertices))
+print("Faces:", len(loaded_mesh.faces))
+print("Watertight:", loaded_mesh.is_watertight)
+print("Bounds:", loaded_mesh.bounds)
+print("File size:", round(os.path.getsize(obj_path) / 1024, 2), "KB")
+
+# ------------------------------------------------------------
+# 9. VISUALIZE 3D MODEL
+# ------------------------------------------------------------
+
+print("\nDisplaying 3D model...")
+
+fig = go.Figure(
+    data=[
+        go.Mesh3d(
+            x=vertices[:, 0],
+            y=vertices[:, 1],
+            z=vertices[:, 2],
+            i=faces[:, 0],
+            j=faces[:, 1],
+            k=faces[:, 2],
+            color="lightblue",
+            opacity=1.0
+        )
+    ]
+)
+
+fig.update_layout(
+    title="PolyGen - Generated 3D Model",
+    scene=dict(
+        xaxis_title="X",
+        yaxis_title="Y",
+        zaxis_title="Z",
+        aspectmode="data"
+    ),
+    width=850,
+    height=650
+)
+
+fig.show()
+
+# ------------------------------------------------------------
+# 10. DOWNLOAD GENERATED MODEL
+# ------------------------------------------------------------
+
+print("\nDownloading OBJ file...")
+
+files.download(obj_path)
+
+print("\nPOLYGEN PIPELINE COMPLETED SUCCESSFULLY!")
