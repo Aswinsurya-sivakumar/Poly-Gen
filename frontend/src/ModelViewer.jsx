@@ -1,55 +1,95 @@
 
-import { Suspense } from "react";
+import { Suspense, useMemo } from "react";
 import { Canvas, useLoader } from "@react-three/fiber";
-import { Center, OrbitControls } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import * as THREE from "three";
 
-function Model() {
-  // Load the generated OBJ model
-  const model = useLoader(
+// Load the generated car model
+function CarModel() {
+  const obj = useLoader(
     OBJLoader,
-    "/models/sample_model.obj"
+    "/models/generated_car.obj"
   );
 
+  const car = useMemo(() => {
+    const cloned = obj.clone(true);
+
+    // Find original model dimensions
+    const box = new THREE.Box3().setFromObject(cloned);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+
+    // Center the model
+    cloned.position.sub(center);
+
+    // Normalize model size
+    const maxDimension = Math.max(
+      size.x,
+      size.y,
+      size.z
+    );
+
+    if (maxDimension > 0) {
+      cloned.scale.setScalar(3 / maxDimension);
+    }
+
+    return cloned;
+  }, [obj]);
+
   return (
-    <Center>
-      <primitive object={model.clone()} scale={1.5} />
-    </Center>
+    <group rotation={[0, 0, Math.PI]}>
+      <primitive object={car} />
+    </group>
   );
 }
 
-export default function ModelViewer() {
+// Complete 3D viewer
+function ModelViewer() {
   return (
-    <div style={{ width: "100%", height: "500px" }}>
-      <Canvas camera={{ position: [3, 3, 5], fov: 50 }}>
-        <color
-          attach="background"
-          args={["#e8eef5"]}
-        />
-
+    <div
+      style={{
+        width: "100%",
+        height: "550px",
+        background: "#e8eef5",
+        borderRadius: "10px",
+        overflow: "hidden"
+      }}
+    >
+      <Canvas
+        camera={{
+          position: [4, 3, 5],
+          fov: 50,
+          near: 0.1,
+          far: 1000
+        }}
+      >
         {/* Lighting */}
         <ambientLight intensity={1.5} />
 
         <directionalLight
-          position={[5, 5, 5]}
+          position={[5, 8, 5]}
           intensity={2}
         />
 
-        {/* Load the 3D model */}
+        {/* Ground reference */}
+        <gridHelper args={[10, 10]} />
+
+        {/* AI-generated car */}
         <Suspense fallback={null}>
-          <Model />
+          <CarModel />
         </Suspense>
 
-        {/* Camera controls */}
+        {/* Mouse controls */}
         <OrbitControls
-          enableZoom={true}
-          enablePan={true}
-          enableRotate={true}
+          enableRotate
+          enableZoom
+          enablePan
+          makeDefault
         />
-
-        {/* Ground grid */}
-        <gridHelper args={[10, 10]} />
       </Canvas>
     </div>
   );
 }
+
+export default ModelViewer;
