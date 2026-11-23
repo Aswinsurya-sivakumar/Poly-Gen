@@ -1,50 +1,16 @@
 
-import { Suspense, useMemo } from "react";
-import { Canvas, useLoader } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
-import * as THREE from "three";
+import { Suspense } from "react";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, useGLTF } from "@react-three/drei";
 
-// Load the generated car model
-function CarModel() {
-  const obj = useLoader(
-    OBJLoader,
-    "/models/generated_car.obj"
-  );
+// AI-generated 3D model
+function GeneratedModel() {
+  const { scene } = useGLTF("/models/polygen_model.glb");
 
-  const car = useMemo(() => {
-    const cloned = obj.clone(true);
-
-    // Find original model dimensions
-    const box = new THREE.Box3().setFromObject(cloned);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-
-    // Center the model
-    cloned.position.sub(center);
-
-    // Normalize model size
-    const maxDimension = Math.max(
-      size.x,
-      size.y,
-      size.z
-    );
-
-    if (maxDimension > 0) {
-      cloned.scale.setScalar(3 / maxDimension);
-    }
-
-    return cloned;
-  }, [obj]);
-
-  return (
-    <group rotation={[0, 0, Math.PI]}>
-      <primitive object={car} />
-    </group>
-  );
+  return <primitive object={scene} />;
 }
 
-// Complete 3D viewer
+// PolyGen 3D Model Viewer
 function ModelViewer() {
   return (
     <div
@@ -52,44 +18,60 @@ function ModelViewer() {
         width: "100%",
         height: "550px",
         background: "#e8eef5",
-        borderRadius: "10px",
-        overflow: "hidden"
+        borderRadius: "12px",
+        overflow: "hidden",
       }}
     >
       <Canvas
         camera={{
-          position: [4, 3, 5],
-          fov: 50,
+          position: [4, 2.8, 5],
+          fov: 45,
           near: 0.1,
-          far: 1000
+          far: 1000,
         }}
+        shadows
       >
         {/* Lighting */}
         <ambientLight intensity={1.5} />
 
-        <directionalLight
-          position={[5, 8, 5]}
-          intensity={2}
+        <hemisphereLight
+          args={["#ffffff", "#b0b0b0", 1.2]}
         />
 
-        {/* Ground reference */}
-        <gridHelper args={[10, 10]} />
+        <directionalLight
+          position={[5, 8, 5]}
+          intensity={2.5}
+          castShadow
+        />
 
-        {/* AI-generated car */}
+        {/* Ground grid */}
+        <gridHelper
+          args={[10, 20, "#888888", "#cccccc"]}
+          position={[0, -0.02, 0]}
+        />
+
+        {/* Generated GLB model */}
         <Suspense fallback={null}>
-          <CarModel />
+          <GeneratedModel />
         </Suspense>
 
         {/* Mouse controls */}
         <OrbitControls
+          makeDefault
           enableRotate
           enableZoom
           enablePan
-          makeDefault
+          enableDamping
+          dampingFactor={0.05}
+          minDistance={2}
+          maxDistance={20}
+          target={[0, 1, 0]}
         />
       </Canvas>
     </div>
   );
 }
+
+useGLTF.preload("/models/polygen_model.glb");
 
 export default ModelViewer;
